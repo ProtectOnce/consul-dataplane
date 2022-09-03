@@ -25,7 +25,7 @@ const (
 
 // bootstrapConfig generates the Envoy bootstrap config in JSON format.
 func (cdp *ConsulDataplane) bootstrapConfig(ctx context.Context) ([]byte, error) {
-	cdpGRPCFullAddr := strings.Split(cdp.gRPCServer.listener.Addr().String(), ":")
+	cdpGRPCFullAddr := strings.Split(cdp.gRPCServer.listenerAddress, ":")
 	cdpGRPCAddr := cdpGRPCFullAddr[0]
 	cdpGRPCPort := cdpGRPCFullAddr[1]
 	svc := cdp.cfg.Service

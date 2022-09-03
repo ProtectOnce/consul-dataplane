@@ -2,6 +2,7 @@ package consuldp
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -11,10 +12,10 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-netaddrs"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/hashicorp/consul-dataplane/internal/consul-proto/pbdataplane"
-	"github.com/hashicorp/consul-dataplane/pkg/envoy"
 )
 
 // consulServer maintains the settings of the Consul server with which
@@ -30,9 +31,10 @@ type consulServer struct {
 }
 
 type gRPCServer struct {
-	listener net.Listener
-	server   *grpc.Server
-	exitedCh chan struct{}
+	listener        net.Listener
+	listenerAddress string
+	server          *grpc.Server
+	exitedCh        chan struct{}
 }
 
 // ConsulDataplane represents the consul-dataplane process
@@ -46,9 +48,9 @@ type ConsulDataplane struct {
 
 // NewConsulDP creates a new instance of ConsulDataplane
 func NewConsulDP(cfg *Config) (*ConsulDataplane, error) {
-	if err := validateConfig(cfg); err != nil {
-		return nil, err
-	}
+	// if err := validateConfig(cfg); err != nil {
+	// 	return nil, err
+	// }
 
 	hclogLevel := hclog.LevelFromString(cfg.Logging.LogLevel)
 	if hclogLevel == hclog.NoLevel {
@@ -87,6 +89,7 @@ func validateConfig(cfg *Config) error {
 	case cfg.Logging == nil:
 		return errors.New("logging settings not specified")
 	}
+
 	return nil
 }
 
@@ -136,7 +139,10 @@ func (cdp *ConsulDataplane) Run(ctx context.Context) error {
 	gRPCTarget := fmt.Sprintf("%s:%d", cdp.consulServer.address.String(), cdp.cfg.Consul.GRPCPort)
 	grpcCtx, cancel := context.WithTimeout(ctx, time.Duration(10*time.Second))
 	defer cancel()
-	grpcClientConn, err := grpc.DialContext(grpcCtx, gRPCTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+
+	c := &tls.Config{InsecureSkipVerify: true}
+
+	grpcClientConn, err := grpc.DialContext(grpcCtx, gRPCTarget, grpc.WithTransportCredentials(credentials.NewTLS(c)), grpc.WithBlock())
 	if err != nil {
 		cdp.logger.Error("could not connect to consul server over grpc", "error", err, "grpc-target", gRPCTarget)
 		return err
@@ -151,56 +157,59 @@ func (cdp *ConsulDataplane) Run(ctx context.Context) error {
 
 	// TODO: Acquire ACL token and pass it in gRPC calls.
 
+	md := metadata.New(map[string]string{"x-consul-token": "f901bec4-198b-264a-8f6e-a54a9d9eb5bb"})
+	ctx = metadata.NewOutgoingContext(ctx, md)
 	if err := cdp.setConsulServerSupportedFeatures(ctx); err != nil {
 		cdp.logger.Error("failed to set supported features", "error", err)
 		return fmt.Errorf("failed to set supported features: %w", err)
 	}
 
-	err = cdp.setupGRPCServer()
-	if err != nil {
-		return err
-	}
-	go cdp.startGRPCServer()
+	// err = cdp.setupGRPCServer()
+	// if err != nil {
+	// 	return err
+	// }
+	// go cdp.startGRPCServer()
 
-	cfg, err := cdp.bootstrapConfig(ctx)
-	if err != nil {
-		cdp.logger.Error("failed to get bootstrap config", "error", err)
-		return fmt.Errorf("failed to get bootstrap config: %w", err)
-	}
-	cdp.logger.Debug("generated envoy bootstrap config", "config", string(cfg))
+	// cfg, err := cdp.bootstrapConfig(ctx)
+	// if err != nil {
+	// 	cdp.logger.Error("failed to get bootstrap config", "error", err)
+	// 	return fmt.Errorf("failed to get bootstrap config: %w", err)
+	// }
+	// cdp.logger.Debug("generated envoy bootstrap config", "config", string(cfg))
 
-	proxy, err := envoy.NewProxy(envoy.ProxyConfig{
-		Logger:          cdp.logger,
-		LogJSON:         cdp.cfg.Logging.LogJSON,
-		BootstrapConfig: cfg,
-	})
-	if err != nil {
-		cdp.logger.Error("failed to create new proxy", "error", err)
-		return fmt.Errorf("failed to create new proxy: %w", err)
-	}
-	if err := proxy.Run(); err != nil {
-		cdp.logger.Error("failed to run proxy", "error", err)
-		return fmt.Errorf("failed to run proxy: %w", err)
-	}
+	// proxy, err := envoy.NewProxy(envoy.ProxyConfig{
+	// 	Logger:          cdp.logger,
+	// 	LogJSON:         cdp.cfg.Logging.LogJSON,
+	// 	BootstrapConfig: cfg,
+	// })
+	// if err != nil {
+	// 	cdp.logger.Error("failed to create new proxy", "error", err)
+	// 	return fmt.Errorf("failed to create new proxy: %w", err)
+	// }
+	// if err := proxy.Run(); err != nil {
+	// 	cdp.logger.Error("failed to run proxy", "error", err)
+	// 	return fmt.Errorf("failed to run proxy: %w", err)
+	// }
 
-	doneCh := make(chan error)
-	go func() {
-		select {
-		case <-ctx.Done():
-			if err := proxy.Stop(); err != nil {
-				cdp.logger.Error("failed to stop proxy", "error", err)
-			}
-			cdp.stopGRPCServer()
-			doneCh <- nil
-		case <-proxy.Exited():
-			cdp.stopGRPCServer()
-			doneCh <- errors.New("envoy proxy exited unexpectedly")
-		case <-cdp.gRPCServerExited():
-			if err := proxy.Stop(); err != nil {
-				cdp.logger.Error("failed to stop proxy", "error", err)
-			}
-			doneCh <- errors.New("gRPC server exited unexpectedly")
-		}
-	}()
-	return <-doneCh
+	// doneCh := make(chan error)
+	// go func() {
+	// 	select {
+	// 	case <-ctx.Done():
+	// 		if err := proxy.Stop(); err != nil {
+	// 			cdp.logger.Error("failed to stop proxy", "error", err)
+	// 		}
+	// 		cdp.stopGRPCServer()
+	// 		doneCh <- nil
+	// 	case <-proxy.Exited():
+	// 		cdp.stopGRPCServer()
+	// 		doneCh <- errors.New("envoy proxy exited unexpectedly")
+	// 	case <-cdp.gRPCServerExited():
+	// 		if err := proxy.Stop(); err != nil {
+	// 			cdp.logger.Error("failed to stop proxy", "error", err)
+	// 		}
+	// 		doneCh <- errors.New("gRPC server exited unexpectedly")
+	// 	}
+	// }()
+	// return <-doneCh
+	return nil
 }

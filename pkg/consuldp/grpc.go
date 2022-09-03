@@ -15,6 +15,24 @@ import (
 
 const metadataKeyToken = "x-consul-token"
 
+func (cdp *ConsulDataplane) configureXDSServer() {
+
+}
+
+func (cdp *ConsulDataplane) director(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+	if !strings.Contains(fullMethodName, "envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources") {
+		return ctx, nil, status.Errorf(codes.Unimplemented, fmt.Sprintf("Unknown method %s", fullMethodName))
+	}
+	cdp.logger.Trace("forwarding envoy request context to the backend consul server connection")
+	md, _ := metadata.FromIncomingContext(ctx)
+	mdCopy := md.Copy()
+	// TODO (NET-148): Inject the ACL token acquired from the server discovery library
+	mdCopy[metadataKeyToken] = []string{cdp.cfg.Consul.Credentials.Static.Token}
+	outCtx := metadata.NewOutgoingContext(ctx, mdCopy)
+	return outCtx, cdp.consulServer.grpcClientConn, nil
+
+}
+
 func (cdp *ConsulDataplane) setupGRPCServer() error {
 	cdp.logger.Trace("setting up gRPC server")
 	// create gRPC listener
@@ -27,21 +45,13 @@ func (cdp *ConsulDataplane) setupGRPCServer() error {
 	// create gRPC server
 	// one main role of this gRPC server in consul-dataplane is to proxy envoy ADS requests
 	// to the connected Consul server.
-	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
-		if !strings.Contains(fullMethodName, "envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources") {
-			return ctx, nil, status.Errorf(codes.Unimplemented, fmt.Sprintf("Unknown method %s", fullMethodName))
-		}
+	newGRPCServer := grpc.NewServer(grpc.UnknownServiceHandler(proxy.TransparentHandler(cdp.director)))
 
-		md, _ := metadata.FromIncomingContext(ctx)
-		mdCopy := md.Copy()
-		// TODO (NET-148): Inject the ACL token acquired from the server discovery library
-		mdCopy[metadataKeyToken] = []string{cdp.cfg.Consul.Credentials.Static.Token}
-		outCtx := metadata.NewOutgoingContext(ctx, mdCopy)
-		return outCtx, cdp.consulServer.grpcClientConn, nil
-	}
-	newGRPCServer := grpc.NewServer(grpc.UnknownServiceHandler(proxy.TransparentHandler(director)))
-
-	cdp.gRPCServer = &gRPCServer{listener: lis, server: newGRPCServer, exitedCh: make(chan struct{})}
+	cdp.gRPCServer = &gRPCServer{
+		listener:        lis,
+		listenerAddress: lis.Addr().String(),
+		server:          newGRPCServer,
+		exitedCh:        make(chan struct{})}
 	cdp.logger.Trace("created gRPC server", "address", lis.Addr().String())
 	return nil
 }

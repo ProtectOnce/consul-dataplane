@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,8 +23,8 @@ var (
 
 func TestBootstrapConfig(t *testing.T) {
 	const (
-		serverAddr = "1.2.3.4"
-		nodeName   = "agentless-node"
+		gRPCServerAddr = "1.2.3.4:43211"
+		nodeName       = "agentless-node"
 	)
 
 	makeStruct := func(kv map[string]any) *structpb.Struct {
@@ -144,7 +143,7 @@ func TestBootstrapConfig(t *testing.T) {
 			dp := &ConsulDataplane{
 				cfg:             tc.cfg,
 				dpServiceClient: client,
-				consulServer:    &consulServer{address: net.IPAddr{IP: net.ParseIP(serverAddr)}},
+				gRPCServer:      &gRPCServer{listenerAddress: ""},
 			}
 
 			bsCfg, err := dp.bootstrapConfig(ctx)
