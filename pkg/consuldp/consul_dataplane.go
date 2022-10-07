@@ -28,12 +28,6 @@ type httpGetter interface {
 	Get(string) (*http.Response, error)
 }
 
-type metricsServer struct {
-	httpServer *http.Server
-	client     httpGetter
-	exitedCh   chan struct{}
-}
-
 // ConsulDataplane represents the consul-dataplane process
 type ConsulDataplane struct {
 	logger          hclog.Logger
@@ -42,7 +36,7 @@ type ConsulDataplane struct {
 	dpServiceClient pbdataplane.DataplaneServiceClient
 	xdsServer       *xdsServer
 	aclToken        string
-	metricsServer   *metricsServer
+	metricsConfig   *metricsConfig
 }
 
 // NewConsulDP creates a new instance of ConsulDataplane
@@ -113,6 +107,7 @@ func validateConfig(cfg *Config) error {
 }
 
 func (cdp *ConsulDataplane) Run(ctx context.Context) error {
+	ctx = hclog.WithContext(ctx, cdp.logger)
 	cdp.logger.Info("started consul-dataplane process")
 
 	tls, err := cdp.cfg.Consul.TLS.Load()
@@ -175,18 +170,9 @@ func (cdp *ConsulDataplane) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to run proxy: %w", err)
 	}
 
-	cdp.setupMetricsServer()
-	if cdp.cfg.Telemetry.UseCentralConfig {
-		switch {
-		case bootstrapCfg.PrometheusBindAddr != "":
-			go cdp.startMetricsServer()
-			defer cdp.stopMetricsServer()
-		case bootstrapCfg.StatsdURL != "":
-			// TODO: send merged metrics
-		case bootstrapCfg.DogstatsdURL != "":
-			// TODO: send merged metrics
-		}
-	}
+	cdp.metricsConfig = NewMetricsConfig(cdp.cfg.Telemetry)
+
+	cdp.metricsConfig.startMetrics(ctx, bootstrapCfg)
 
 	doneCh := make(chan error)
 	go func() {
@@ -203,7 +189,7 @@ func (cdp *ConsulDataplane) Run(ctx context.Context) error {
 				cdp.logger.Error("failed to stop proxy", "error", err)
 			}
 			doneCh <- errors.New("xDS server exited unexpectedly")
-		case <-cdp.metricsServerExited():
+		case <-cdp.metricsConfig.metricsServerExited():
 			doneCh <- errors.New("metrics server exited unexpectedly")
 		}
 	}()

@@ -11,6 +11,7 @@ import (
 
 	"github.com/hashicorp/consul-dataplane/pkg/consuldp"
 	"github.com/hashicorp/consul-dataplane/pkg/version"
+	"github.com/hashicorp/go-hclog"
 )
 
 var (
@@ -211,10 +212,12 @@ func main() {
 			BindPort:    xdsBindPort,
 		},
 	}
+
 	consuldpInstance, err := consuldp.NewConsulDP(consuldpCfg)
 	if err != nil {
 		log.Fatal(err)
 	}
+	ctx := hclog.WithContext(ctx, consuldpInstance.Logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
