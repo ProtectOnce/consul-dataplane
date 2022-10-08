@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,15 +20,22 @@ import (
 func TestMetricsServerClosed(t *testing.T) {
 	telem := &TelemetryConfig{
 		UseCentralConfig: true,
-		Prometheus: PrometheusTelemetryConfig{
-			ServiceMetricsURL: "fake-service-metrics-url",
+		Prometheus:       PrometheusTelemetryConfig{},
+	}
+	m := &metricsConfig{
+		mu:          sync.Mutex{},
+		cfg:         telem,
+		errorExitCh: make(chan struct{}),
+
+		client: &http.Client{
+			Timeout: 10 * time.Second,
 		},
 	}
-	m := NewMetricsConfig(telem)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	m.startMetrics(ctx, &bootstrap.BootstrapConfig{PrometheusBindAddr: "nonempty"})
+	_ = m.startMetrics(ctx, &bootstrap.BootstrapConfig{PrometheusBindAddr: "nonempty"})
+	time.Sleep(time.Second * 30)
 	require.Equal(t, m.running, true)
 	cancel()
 	require.Eventually(t, func() bool {
@@ -79,7 +87,15 @@ func TestMetricsServerEnabled(t *testing.T) {
 		c := c
 		t.Run(name, func(t *testing.T) {
 
-			m := NewMetricsConfig(c.telemetry)
+			m := &metricsConfig{
+				mu:          sync.Mutex{},
+				cfg:         c.telemetry,
+				errorExitCh: make(chan struct{}),
+
+				client: &http.Client{
+					Timeout: 10 * time.Second,
+				},
+			}
 
 			require.NotNil(t, m)
 			require.NotNil(t, m.client)
@@ -93,15 +109,15 @@ func TestMetricsServerEnabled(t *testing.T) {
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			m.startMetrics(ctx, &bootstrap.BootstrapConfig{PrometheusBindAddr: "nonempty"})
-			require.Equal(t, metricsBackendBindAddr, m.httpServer.Addr)
+			_ = m.startMetrics(ctx, &bootstrap.BootstrapConfig{PrometheusBindAddr: "nonempty"})
+			require.Equal(t, metricsBackendBindAddr, m.promServer.Addr)
 
 			// Have consul-dataplane's metrics server start on an open port.
 			// And figure out what port was used so we can make requests to it.
 			// Conveniently, this seems to wait until the server is ready for requests.
 			portCh := make(chan int, 1)
-			m.httpServer.Addr = "127.0.0.1:0"
-			m.httpServer.BaseContext = func(l net.Listener) context.Context {
+			m.promServer.Addr = "127.0.0.1:0"
+			m.promServer.BaseContext = func(l net.Listener) context.Context {
 				portCh <- l.Addr().(*net.TCPAddr).Port
 				return context.Background()
 			}

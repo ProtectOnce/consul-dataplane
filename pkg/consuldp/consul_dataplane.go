@@ -180,7 +180,10 @@ func (cdp *ConsulDataplane) Run(ctx context.Context) error {
 
 	cdp.metricsConfig = NewMetricsConfig(cdp.cfg.Telemetry)
 
-	cdp.metricsConfig.startMetrics(ctx, bootstrapCfg)
+	err = cdp.metricsConfig.startMetrics(ctx, bootstrapCfg)
+	if err != nil {
+		return err
+	}
 
 	doneCh := make(chan error)
 	go func() {
