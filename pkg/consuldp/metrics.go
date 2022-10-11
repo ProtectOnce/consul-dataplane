@@ -21,19 +21,27 @@ import (
 type Stats int
 
 const (
-	envoyMetricsUrl    = "http://127.0.0.1:19000/stats/prometheus"
-	cdpMetricsBindAddr = "127.0.0.1"
-	cdpMetricsBindPort = "9002"
+	// This is the listener that the admin endpoint will be available on.
+	// TODO: Make this configurable
+	envoyMetricsUrl = "http://127.0.0.1:19000/stats/prometheus"
 
-	metricsBackendBindPort       = "20100"
-	metricsBackendBindAddr       = "127.0.0.1:" + metricsBackendBindPort
-	Prometheus             Stats = iota
+	// The consul dataplane specific metrics will be exposed on this port on the loopback
+	cdpMetricsBindPort = "20101"
+	cdpMetricsBindAddr = "127.0.0.1:" + cdpMetricsBindPort
+
+	// mergedMetricsBackendBindPort is the port which will serve the merged
+	// metrics and the port that envoy is exposing a scrape url for prometheus
+	mergedMetricsBackendBindPort = "20100"
+	metricsBackendBindAddr       = "127.0.0.1:" + mergedMetricsBackendBindPort
+
+	// Distinguishing values for the backend stats
+	Prometheus Stats = iota
 	Dogstatsd
 	Statsd
 )
 
 var (
-	cdpMetricsUrl = fmt.Sprintf("http://%s:%s", cdpMetricsBindAddr, cdpMetricsBindPort)
+	cdpMetricsUrl = fmt.Sprintf("http://%s", cdpMetricsBindAddr)
 )
 
 // metricsConfig handles all configuration related to merging
@@ -85,12 +93,12 @@ func (m *metricsConfig) startMetrics(ctx context.Context, bcfg *bootstrap.Bootst
 
 		switch {
 		case bcfg.PrometheusBindAddr != "":
-			// 1. start consul dataplane metric sink
+			// 1. start consul dataplane metric sinks of type Prometheus
 			err := m.configureCDPMetricSinks(ctx, Prometheus)
 			if err != nil {
 				return fmt.Errorf("failure enabling consul dataplane metrics for prometheus: %w", err)
 			}
-			// 2. Setup prometheus handler for the merged metrics endpoint that prom
+			// 2. Setup prometheus handler for the merged metrics endpoint that prometheus
 			// will actually scrape
 			mux := http.NewServeMux()
 			mux.HandleFunc("/stats/prometheus", m.mergedMetricsHandler)
@@ -231,6 +239,7 @@ func (m *metricsConfig) getPromDefaults() (*prom.Registry, *prometheus.Prometheu
 	return r, opts, nil
 }
 
+// configureCDPMetricSinks
 func (m *metricsConfig) configureCDPMetricSinks(ctx context.Context, s Stats) error {
 
 	switch s {
@@ -265,7 +274,7 @@ func (m *metricsConfig) configureCDPMetricSinks(ctx context.Context, s Stats) er
 
 func (m *metricsConfig) runCDPPrometheusServer(gather prom.Gatherer) {
 	m.promScrapeServer = &http.Server{
-		Addr: fmt.Sprintf("%s:%s", cdpMetricsBindAddr, cdpMetricsBindPort),
+		Addr: cdpMetricsBindAddr,
 		Handler: promhttp.HandlerFor(gather, promhttp.HandlerOpts{
 			ErrorHandling: promhttp.ContinueOnError,
 		}),
