@@ -1,0 +1,20 @@
+FROM envoyproxy/envoy-windows:v1.24.0 as envoy
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+
+RUN ["powershell", "Set-ExecutionPolicy", "Bypass", "-Scope", "Process", "-Force;"]
+RUN ["powershell", "iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))"]
+
+# Install Git Bash
+RUN choco install git.install -yf
+
+# Copy Envoy Binary
+COPY --from=envoy ["C:/Program Files/envoy/", "C:/envoy/"]
+
+# Copy custom consul-dataplane binary
+COPY ./consul-dataplane.exe "C:/consul-dataplane/"
+
+# Set Path
+RUN SETX /M path "%PATH%;C:\envoy;C:\consul-dataplane;C:\Program Files\Git\bin;"
+
+SHELL [ "bash.exe" ]
+ENTRYPOINT [ "consul-dataplane.exe" ]
