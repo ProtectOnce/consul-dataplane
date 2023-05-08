@@ -1,0 +1,4 @@
+```release-note:feature
+Add -shutdown-drain-listeners and -shutdown-grace-period flags to configure graceful shutdown behavior of the
+Envoy proxy container.
+```
