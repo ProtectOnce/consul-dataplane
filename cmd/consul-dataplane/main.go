@@ -147,15 +147,15 @@ func init() {
 
 	// Default is false because it will generally be configured appropriately by Helm
 	// configuration or pod annotation.
-	BoolVar(&shutdownDrainListeners, "shutdown-drain-listeners", false, "DP_SHUTDOWN_DRAIN_LISTENERS", "Wait for proxy listeners to drain before terminating the proxy container.")
+	BoolVar(&shutdownDrainListeners, "shutdown-drain-listeners", false, "DP_SHUTDOWN_DRAIN_LISTENERS", "Wait for proxy listeners to drain before terminating the proxy container. [Not yet implemented.]")
 	// TODO: Should the grace period be implemented as a minimum or maximum? If all
 	// connections have drained from the proxy before the end of the grace period,
 	// should it terminate earlier?
 	// Default is 0 because it will generally be configured appropriately by Helm
 	// configuration or pod annotation.
-	IntVar(&shutdownGracePeriod, "shutdown-grace-period", 0, "DP_SHUTDOWN_GRACE_PERIOD", "Amount of time to wait after receiving a SIGTERM signal before terminating the proxy.")
-	StringVar(&gracefulShutdownPath, "graceful-shutdown-path", "/graceful_shutdown", "DP_GRACEFUL_SHUTDOWN_PATH", "An HTTP path to serve the graceful shutdown endpoint.")
-	IntVar(&gracefulPort, "graceful-port", 20300, "DP_GRACEFUL_PORT", "A port to serve HTTP endpoints for graceful shutdown.")
+	IntVar(&shutdownGracePeriod, "shutdown-grace-period", 0, "DP_SHUTDOWN_GRACE_PERIOD", "Amount of time to wait after receiving a SIGTERM signal before terminating the proxy. [Not yet implemented.]")
+	StringVar(&gracefulShutdownPath, "graceful-shutdown-path", "/graceful_shutdown", "DP_GRACEFUL_SHUTDOWN_PATH", "An HTTP path to serve the graceful shutdown endpoint. [Not yet implemented.]")
+	IntVar(&gracefulPort, "graceful-port", 20300, "DP_GRACEFUL_PORT", "A port to serve HTTP endpoints for graceful shutdown. [Not yet implemented.]")
 }
 
 // validateFlags performs semantic validation of the flag values
